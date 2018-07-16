@@ -247,9 +247,13 @@ def factorize_complex_poles(poles, T_tilde, verbose=False, conv="doubled_up"):
     for p in poles:
 
         R = complex_prod_deg(p, poles, found_vecs, dim, verbose=verbose, conv=conv)
-
-        L = la.inv(R)*limit(lambda z: (z-p)*T_tilde(z),p)
+        L = la.inv(R) * limit(lambda z: (z-p)*T_tilde(z),p)
         [eigvals,eigvecs] = la.eig(L)
+        if verbose:
+            print("Eigenvalues: ")
+            print(eigvals)
+            print ("eigenvectors")
+            print(eigvecs)
         index = numpy.argmax(map(abs,eigvals))
         big_vec = numpy.asmatrix(eigvecs[:,index])
         big_val = eigvals[index]
