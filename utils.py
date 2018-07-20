@@ -153,17 +153,20 @@ def permutation_conv_matrix(dim):
     return P_conv
 
 
-def check_doubled_up_func(T, z, eps = 1e-5, conv="doubled_up"):
+def check_doubled_up_func(T, z, eps = 1e-4, conv="doubled_up", verbose=False):
     """
     Check if the transfer function T is doubled-up at z.
     """
     T_mat = numpy.matrix(T(z))
     dim = T_mat.shape[0]/2
     Sigma = make_Sigma(dim, conv=conv)
-    return la.norm(Sigma * T(numpy.conj(z)).H * Sigma - T(z)) < eps
+    norm = la.norm(Sigma * T(numpy.conj(z)).H * Sigma - T(z))
+    if verbose:
+        print("norm is %s" %norm)
+    return norm < eps
 
 
-def check_doubled_up_mat(M, conv="doubled_up", eps = 1e-5):
+def check_doubled_up_mat(M, conv="doubled_up", eps = 1e-4):
     """
     Check if the transfer function T is doubled-up at z.
     """
@@ -200,7 +203,7 @@ def make_Jv(M, conv="double_up"):
         raise ValueError("Unknown value for conv: %s." %conv)
     return Jv
 
-def complex_prod_deg(z, poles, vecs, dim, eps=1e-3, verbose=False, conv="doubled_up"):
+def complex_prod_deg(z, poles, vecs, dim, eps=0., verbose=False, conv="doubled_up"):
     """
     Generate a complex product given complex poles and vectors,
     and evaluate at $z$.
@@ -222,32 +225,48 @@ def complex_prod_deg(z, poles, vecs, dim, eps=1e-3, verbose=False, conv="doubled
         v1[0,0] += eps ## In case of degenerate vectors, set eps != 0.
 
         v1 = v1 / numpy.sqrt(v1.H*Jv*v1)
+        # v1 /= val
+
         if v1.H*Jv*v1 > 0:
             V1 = numpy.hstack([v1, Sigma*v1.conj()])
         else: ## flipping v and \Sigma *v^# changes the normalization sign
             V1 = numpy.hstack([Sigma*v1.conj(), v1])
         V1_flat = J1*V1.H*Jv
 
-        F1 = numpy.matrix([[(z+p.conj())/(z-p),0],
-                            [0,(z+p)/(z-p.conj())]])
+        if verbose:
+            print("v1 == ", v1)
+            print("V1 == ", V1)
+            print ("V1 * V1_flat == ", V1 * V1_flat)
+            print ("V1_flat * V1 == ", V1_flat * V1)
 
-        F2 = numpy.matrix([[(z+p)/(z-p.conj()),0],
-                           [0,(z+p.conj())/(z-p)]])
+
+        F1 = numpy.matrix([[(z+numpy.conj(p))/(z-p),0],
+                            [0,(z+p)/(z-numpy.conj(p))]])
+
+        # F2 = numpy.matrix([[(z+p)/(z-p.conj()),0],
+        #                    [0,(z+p.conj())/(z-p)]])
 
         I = numpy.matrix(numpy.eye(dim))
-        R = R * (I -V1*V1_flat+ V1*F1*V1_flat)*(I -V1*V1_flat+ V1*F2*V1_flat)
+        R = R * (I -V1*V1_flat+ V1*F1*V1_flat)#*(I -V1*V1_flat+ V1*F2*V1_flat)
     return R
 
-def factorize_complex_poles(poles, T_tilde, verbose=False, conv="doubled_up"):
+
+def factorize_complex_poles(poles, T_tilde, verbose=False, conv="doubled_up", eps=0.):
     """
     Find the vectors at a given list of complex poles.
     """
     dim = T_tilde(0).shape[0]
     found_vecs = []
-    for p in poles:
+    for i, p in enumerate(poles):
+        if type(eps) == list:
+            current_eps = eps[i]
+        else: ## if not a list assume a number:
+            current_eps = eps
+        R = complex_prod_deg(p, poles, found_vecs, dim, verbose=verbose, conv=conv, eps=current_eps)
 
-        R = complex_prod_deg(p, poles, found_vecs, dim, verbose=verbose, conv=conv)
-        L = la.inv(R) * limit(lambda z: (z-p)*T_tilde(z),p)
+        print ("R = %s" % R)
+
+        L =  la.inv(R) *limit(lambda z: (z-p)*T_tilde(z),p)
         [eigvals,eigvecs] = la.eig(L)
         if verbose:
             print("Eigenvalues: ")
