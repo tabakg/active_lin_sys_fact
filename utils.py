@@ -160,7 +160,7 @@ def check_doubled_up_func(T, z, eps = 1e-4, conv="doubled_up", verbose=False):
     T_mat = numpy.matrix(T(z))
     dim = T_mat.shape[0]/2
     Sigma = make_Sigma(dim, conv=conv)
-    norm = la.norm(Sigma * T(numpy.conj(z)).H * Sigma - T(z))
+    norm = la.norm(Sigma * T(numpy.conj(z)).conj() * Sigma - T(z))
     if verbose:
         print("norm is %s" %norm)
     return norm < eps
