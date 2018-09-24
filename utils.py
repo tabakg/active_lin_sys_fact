@@ -2,6 +2,8 @@ from numpy import linalg as la
 import numpy
 import sympy
 import sys
+from Potapov import get_Potapov_vecs
+
 
 P_dir = '/Users/gil/Google Drive/repos/potapov/potapov_interpolation/Potapov_Code/'
 sys.path.append(P_dir)
@@ -203,14 +205,30 @@ def make_Jv(M, conv="double_up"):
         raise ValueError("Unknown value for conv: %s." %conv)
     return Jv
 
-def complex_prod_deg(z, poles, vecs, dim, eps=0., verbose=False, conv="doubled_up"):
+def complex_prod_deg(z, poles, vecs, dim, eps=0., conv="doubled_up", deg=False, verbose=False):
     """
     Generate a complex product given complex poles and vectors,
     and evaluate at $z$.
 
-    In the example, the complex eigenvectors were all degenerate,
-    so we perturb the first component by $\eps$. In this case we
-    actually need two terms to approximate the degenerate space.
+    In one of the examples, the complex eigenvectors are degenerate
+    in the sense that there are two eigenvectors sharing a pole.
+    In this case, one way to remove the degeneracy is to preturb
+    the first component of the eigenvector by a small parameter $\eps$.
+    In that case we need to combine two terms to approximate the degenrate
+    subspace. To avoid numerical issues we provide an implementation that
+    combines the two terms (when deg = True).
+
+    Args:
+        z (complex number): where to evaluate
+        poles (list of complex numbers): poles of function to factorize
+        vecs (list of complex vectors given as matrices): The eigenvectors
+            at each pole.
+        eps (float or complex number): perturbation to first component.
+        conv (string): convention for how matrices are doubled_up: can be
+            "doubled_up" or "consecutive".
+        deg (bool): whether to assume there are two degenerate poles.
+        verbose (bool): how much to print
+
     """
     M = int(dim/2)
     R = numpy.matrix(numpy.eye(dim))
@@ -239,15 +257,19 @@ def complex_prod_deg(z, poles, vecs, dim, eps=0., verbose=False, conv="doubled_u
             print ("V1 * V1_flat == ", V1 * V1_flat)
             print ("V1_flat * V1 == ", V1_flat * V1)
 
+        if deg:
+            F1 = numpy.matrix([[(z+numpy.conj(p))/(z-p),0],
+                                [0,(z+p)/(z-numpy.conj(p))]])
+            F2 = numpy.matrix([[(z+p)/(z-p.conj()),0],
+                               [0,(z+p.conj())/(z-p)]])
+            I = numpy.matrix(numpy.eye(dim))
+            R = R * (I -V1*V1_flat+ V1*F1*V1_flat)*(I -V1*V1_flat+ V1*F2*V1_flat)
 
-        F1 = numpy.matrix([[(z+numpy.conj(p))/(z-p),0],
-                            [0,(z+p)/(z-numpy.conj(p))]])
-
-        # F2 = numpy.matrix([[(z+p)/(z-p.conj()),0],
-        #                    [0,(z+p.conj())/(z-p)]])
-
-        I = numpy.matrix(numpy.eye(dim))
-        R = R * (I -V1*V1_flat+ V1*F1*V1_flat)#*(I -V1*V1_flat+ V1*F2*V1_flat)
+        else:
+            F1 = numpy.matrix([[(z+numpy.conj(p))/(z-p),0],
+                                [0,(z+p)/(z-numpy.conj(p))]])
+            I = numpy.matrix(numpy.eye(dim))
+            R = R * (I -V1*V1_flat+ V1*F1*V1_flat)
     return R
 
 
@@ -264,7 +286,8 @@ def factorize_complex_poles(poles, T_tilde, verbose=False, conv="doubled_up", ep
             current_eps = eps
         R = complex_prod_deg(p, poles, found_vecs, dim, verbose=verbose, conv=conv, eps=current_eps)
 
-        print ("R = %s" % R)
+        if verbose:
+            print ("R = %s" % R)
 
         L =  la.inv(R) *limit(lambda z: (z-p)*T_tilde(z),p)
         [eigvals,eigvecs] = la.eig(L)
@@ -292,15 +315,16 @@ def factorize_real_poles(p1, p2, T_tilde, conv="doubled_up"):
     v1, v2 = real_scaling(w1, w2)
     M = v1.shape[0]/2
     Jv = make_Jv(M, conv)
+    J1 = make_Jv(1, conv)
     U = numpy.matrix([[1,1],[-1j,1j]])
     V = numpy.hstack([v1,v2])*U
-    V_flat = JA*V.H*Jv
+    V_flat = J1*V.H*Jv
 
     if (V*V_flat)[0,0] < 0:
         v1, v2 = v2, v1
         p1, p2 = p2, p1
         V = numpy.hstack([v1,v2])*U
-        V_flat = JA*V.H*Jv
+        V_flat = J1*V.H*Jv
 
     F1 = lambda z: (numpy.matrix([[(z+p2)/(z-p1),0],
                                  [0,(z+p1)/(z-p2)]])
@@ -310,7 +334,7 @@ def factorize_real_poles(p1, p2, T_tilde, conv="doubled_up"):
     I =  numpy.matrix(numpy.eye(v1.shape[0]))
     return lambda z: (I - V*V_flat + V*la.inv(U)*F1(z)*(U)*V_flat)
 
-def factorize_deg_real_pole(pole, T):
+def factorize_deg_real_pole(pole, T, conv="doubled_up"):
     """
     Function for factorizing a degenerate real pole.
 
@@ -325,17 +349,18 @@ def factorize_deg_real_pole(pole, T):
     w2 = scale_vector_doubled_up(u2)
     v2, v1 = real_scaling(w1, w2)
     M = v1.shape[0]/2
-    Jv = numpy.matrix(numpy.diag([1 for i in range(M)]+[-1 for i in range(M)]))
+    Jv = make_Jv(M, conv=conv)
+    J1 = make_Jv(1, conv=conv)
 
     U = numpy.matrix([[1,1],[-1j,1j]])
     V = numpy.hstack([v1,v2])*U
 
-    V_flat = JA*V.H*Jv
+    V_flat = J1*V.H*Jv
 
     if (V*V_flat)[0,0] < 0:
         v1, v2 = v2, v1
         V = numpy.hstack([v1,v2])*U
-        V_flat = JA*V.H*Jv
+        V_flat = J1*V.H*Jv
 
 
     F1 = lambda z: (numpy.matrix([[(z+pole)/(z-pole),0],
@@ -343,3 +368,26 @@ def factorize_deg_real_pole(pole, T):
                     )
 
     return lambda z: numpy.matrix(numpy.eye(2)) - V*V_flat + V*F1(z)*V_flat
+
+def get_squeezed_spectrum(which_vals, theta = 0):
+
+    """
+    Generates the squeezed get_squeezed_spectrum.
+
+    Args:
+        which_vals (3d-array):
+            first index: frequency (assumed from -omega to omega)
+            second and third indices are matrix coordinates
+        theta (quadrature angle)
+
+    """
+
+    N_ = which_vals[:,0,1]*which_vals[:,0,1].conj()
+    M_ = which_vals[:,0,0]*numpy.flip(which_vals[:,0,1], axis=0)
+
+    A_ = numpy.exp(2j*theta)* M_ + numpy.exp(-2j*theta)* numpy.flip(M_, axis=0).conj()
+    B_ = N_+numpy.flip(N_, axis=0)
+
+    # Squeezing power spectrum
+    PP = numpy.log(1 + A_ + B_)
+    return PP
